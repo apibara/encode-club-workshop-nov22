@@ -1,4 +1,11 @@
-import { credentials, NodeClient, proto } from "@apibara/protocol";
+import {
+  credentials,
+  NodeClient,
+  proto,
+  hexToBuffer,
+  bufferToHex,
+} from "@apibara/protocol";
+import { Block } from "@apibara/starknet";
 
 const BRIQ_DEPLOY_BLOCK = 180_000;
 
@@ -25,7 +32,22 @@ export class AppIndexer {
     });
   }
 
-  async handleData(data: proto.StreamMessagesResponse__Output) {
-    console.log(data);
+  async handleData(message: proto.StreamMessagesResponse__Output) {
+    if (message.data) {
+      if (!message.data.data.value) {
+        throw new Error("received invalid data");
+      }
+      const block = Block.decode(message.data.data.value);
+      await this.handleBlock(block);
+    } else if (message.invalidate) {
+      console.log(message.invalidate);
+    }
+  }
+
+  async handleBlock(block: Block) {
+    console.log("Block");
+    console.log(`    hash: ${bufferToHex(new Buffer(block.blockHash.hash))}`);
+    console.log(`  number: ${block.blockNumber}`);
+    console.log(`    time: ${block.timestamp.toISOString()}`);
   }
 }

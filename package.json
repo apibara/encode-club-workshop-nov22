@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@apibara/protocol": "^0.1.2",
+    "@apibara/starknet": "^0.1.1",
     "pg": "^8.4.0",
     "reflect-metadata": "^0.1.13",
     "typeorm": "0.3.10"
