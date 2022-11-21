@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { DataSource } from "typeorm";
+import { State, Token, Transfer } from "./entities";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -10,7 +11,7 @@ export const AppDataSource = new DataSource({
   database: "workshop",
   synchronize: true,
   logging: false,
-  entities: [],
+  entities: [State, Transfer, Token],
   migrations: [],
   subscribers: [],
 });

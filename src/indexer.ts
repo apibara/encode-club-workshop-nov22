@@ -8,6 +8,9 @@ import {
 import { Block, Transaction, TransactionReceipt } from "@apibara/starknet";
 import BN from "bn.js";
 import { getSelectorFromName } from "starknet/dist/utils/hash";
+import { EntityManager } from "typeorm";
+import { AppDataSource } from "./data-source";
+import { State, Token, Transfer } from "./entities";
 
 const BRIQ_DEPLOY_BLOCK = 180_000;
 const BRIQ_ADDRESS = hexToBuffer(
@@ -26,8 +29,17 @@ export class AppIndexer {
   }
 
   async run() {
+    // resume from where it left the previous run
+    const state = await AppDataSource.manager.findOneBy(State, {
+      indexerId: this.indexerId,
+    });
+    let startingSequence = BRIQ_DEPLOY_BLOCK;
+    if (state) {
+      startingSequence = state.sequence + 1;
+    }
+
     const messages = this.client.streamMessages({
-      startingSequence: BRIQ_DEPLOY_BLOCK,
+      startingSequence,
     });
 
     messages.on("data", this.handleData.bind(this));
@@ -58,13 +70,26 @@ export class AppIndexer {
     console.log(`    time: ${block.timestamp.toISOString()}`);
 
     console.log("  transfers");
-    for (let receipt of block.transactionReceipts) {
-      const tx = block.transactions[receipt.transactionIndex];
-      await this.handleTransaction(tx, receipt);
-    }
+    await AppDataSource.manager.transaction(async (manager) => {
+      for (let receipt of block.transactionReceipts) {
+        const tx = block.transactions[receipt.transactionIndex];
+        await this.handleTransaction(manager, tx, receipt);
+      }
+
+      // updated indexed block
+      await manager.upsert(
+        State,
+        { indexerId: this.indexerId, sequence: block.blockNumber },
+        { conflictPaths: ["indexerId"] }
+      );
+    });
   }
 
-  async handleTransaction(tx: Transaction, receipt: TransactionReceipt) {
+  async handleTransaction(
+    manager: EntityManager,
+    tx: Transaction,
+    receipt: TransactionReceipt
+  ) {
     for (let event of receipt.events) {
       if (!BRIQ_ADDRESS.equals(event.fromAddress)) {
         continue;
@@ -84,6 +109,18 @@ export class AppIndexer {
         `    ${bufferToHex(senderAddress)} -> ${bufferToHex(recipientAddress)}`
       );
       console.log(`      ${tokenId.toString()}`);
+
+      await manager.insert(Transfer, {
+        sender: senderAddress,
+        recipient: recipientAddress,
+        tokenId: tokenId.toBuffer(),
+      });
+
+      await manager.upsert(
+        Token,
+        { id: tokenId.toBuffer(), owner: recipientAddress },
+        { conflictPaths: ["id"] }
+      );
     }
   }
 }
