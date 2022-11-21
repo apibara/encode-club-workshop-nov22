@@ -5,9 +5,16 @@ import {
   hexToBuffer,
   bufferToHex,
 } from "@apibara/protocol";
-import { Block } from "@apibara/starknet";
+import { Block, Transaction, TransactionReceipt } from "@apibara/starknet";
+import BN from "bn.js";
+import { getSelectorFromName } from "starknet/dist/utils/hash";
 
 const BRIQ_DEPLOY_BLOCK = 180_000;
+const BRIQ_ADDRESS = hexToBuffer(
+  "0x0266b1276d23ffb53d99da3f01be7e29fa024dd33cd7f7b1eb7a46c67891c9d0",
+  32
+);
+const TRANSFER_KEY = hexToBuffer(getSelectorFromName("Transfer"), 32);
 
 export class AppIndexer {
   private readonly client: NodeClient;
@@ -49,5 +56,40 @@ export class AppIndexer {
     console.log(`    hash: ${bufferToHex(new Buffer(block.blockHash.hash))}`);
     console.log(`  number: ${block.blockNumber}`);
     console.log(`    time: ${block.timestamp.toISOString()}`);
+
+    console.log("  transfers");
+    for (let receipt of block.transactionReceipts) {
+      const tx = block.transactions[receipt.transactionIndex];
+      await this.handleTransaction(tx, receipt);
+    }
   }
+
+  async handleTransaction(tx: Transaction, receipt: TransactionReceipt) {
+    for (let event of receipt.events) {
+      if (!BRIQ_ADDRESS.equals(event.fromAddress)) {
+        continue;
+      }
+      if (!TRANSFER_KEY.equals(event.keys[0])) {
+        continue;
+      }
+
+      const senderAddress = Buffer.from(event.data[0]);
+      const recipientAddress = Buffer.from(event.data[1]);
+      const tokenId = uint256FromBytes(
+        Buffer.from(event.data[2]),
+        Buffer.from(event.data[3])
+      );
+
+      console.log(
+        `    ${bufferToHex(senderAddress)} -> ${bufferToHex(recipientAddress)}`
+      );
+      console.log(`      ${tokenId.toString()}`);
+    }
+  }
+}
+
+function uint256FromBytes(low: Buffer, high: Buffer): BN {
+  const lowB = new BN(low);
+  const highB = new BN(high);
+  return highB.shln(128).add(lowB);
 }
